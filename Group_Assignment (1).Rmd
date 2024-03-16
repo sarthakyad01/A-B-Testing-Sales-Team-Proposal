@@ -1,0 +1,196 @@
+---
+title: "Group Assignment"
+output:
+  pdf_document: default
+  html_document: default
+date: "2023-09-12"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Data Importing
+
+-   Import the historical data
+
+```{r}
+hist_data <- read.csv("/Users/pinkzhang/MMA/RSM8502/final presentation/hist_data.csv")
+head(hist_data, 20)
+```
+
+# Descriptive Statistics
+
+-   As the Sales team proposed to reduce the rank difference between players, and increase the idle_time before players are matched to each other in order to increase the play time resulting in increase in in_game_purchases, and increase in the number of ad clicks, respectively, our descriptive statistics are meant to test whether such a relationship between the variables exists. Only if we observe said relationships can we perform an A/B test, and produce a valid result based on which we can produce a recommended decision.
+
+```{r,}
+library(ggplot2)
+library(lubridate)
+library(dplyr)
+library(tidyverse)
+#Creating Histogram depicting play time with bot values
+ggplot(hist_data, aes(play_time_bot))+
+  geom_histogram(binwidth = 10, fill='black',color='pink')+
+  labs(title='Histogram Depicting Play Time with Bot Values', x='Play_Time_With_Bot')
+#Creating plot for Scatter plot of play time and in_game_purchases by users
+ggplot(hist_data,aes(play_time, in_game_purchases))+
+  geom_point(color='grey')+
+  geom_smooth(method='lm', se=FALSE, color='green')+
+  labs(title='Scatter Plot of Play Time and In Game Purchases by Users', x='Play_Time', y='In_Game_Purchase')+
+  theme(plot.title=element_text(hjust=0.5))
+#Creating plot for Scatter plot of ad clicks and idle_time by users
+ggplot(hist_data,aes(idle_time, ad_clicks))+
+  geom_point(color='brown')+
+  geom_smooth(method='lm', se=FALSE, color='yellow')+
+  labs(title='Scatter Plot of Ad Clicks and Idle Time by Users', x='Idle_Time', y='Ad_Clicks')+
+  theme(plot.title=element_text(hjust=0.5))
+#Creating a Boxplot of Time at which play started against Rank
+hist_data$time <- strftime(hist_data$start, format="%H")#extracting the time
+ggplot(hist_data, aes(x = time, y = rank)) +
+  geom_boxplot() +
+  labs(x = "Time", y = "Rank", title = "Boxplot of Time Series")+
+  theme(plot.title=element_text(hjust=0.5))
+```
+
+Histogram depicting play time with bot values: this indicates that games with bots tend to last a short duration implying lower in-game purchases.
+
+Creating plot for Scatter plot of play time and in game purchases by users: The plot shows a positive relationship between play time and game purchases.
+
+Scatter plot of ad clicks and idle_time by users: The plot shows a positive relationship between idle_time and ad_clicks.
+
+Boxplot of Time Series: The rank values are similar over the hours, suggesting that the data are collected without selection bias.
+
+# Power analysis
+
+-   calculate minimum sample size required to detect desired effect (15% increase in revenue)
+
+```{r}
+library(pwr)
+effect_size<-0.15
+alpha<-0.05
+pr<-0.8
+sample_size<-pwr.t.test(d=effect_size,sig.level=alpha,power=pr,type="two.sample",alternative = "greater")
+sample_size
+```
+
+Any sample size greater than 551 should fit our requirement.
+
+# A/A Test for Historical Data
+
+-   Apply A/A testing to the historical data, where A/A tests help ensure that the A/B testing platform or system is functioning correctly. It's essential to confirm that the randomization of our approch into different groups and data collection are working as intended.By applying a A/A test, we establish a baseline for performance. This baseline can be used as a reference point to evaluate the effectiveness of future A/B tests. It helps determine if observed changes in A/B tests are statistically significant.
+
+```{r}
+hist_data$revenue<-(hist_data$ad_clicks*0.01)+hist_data$in_game_purchases
+
+tst2 <- function(N, f, s) {
+  f <- sample(hist_data$revenue,1000 , replace = T)
+  s <- sample(hist_data$revenue,1000,replace = T)
+  t_test <- t.test(f,s)
+  return(t_test$p.value)
+
+}
+set.seed(100)
+vec2 <- c()
+for (i in 1:10^4) {
+  N <- 100
+  newtest <- tst2(N,f,s)
+  vec2 <- c(newtest,vec2)
+}
+hist(vec2)
+```
+
+1)T-test:
+
+Eliminating other options, T-test is commonly used when computing with continuous data, for our case is revenue per user. And especially comes along when computing comparison of the means of two independent samples (A and B). However, Two sample T-test takes the assumption that data falls under a  normal distribution and constant variance. To handle that, we bootstrapped the data to make it more normalized.
+
+2)Result:
+
+We generate a histogram of p-values. The histogram shows an approximately uniform distribution, suggesting that there is no real difference between the two groups of data . Deviation from uniformity can signal potential issue with the testing setup, data quality, or statistical methodology. Thus further supports our data collection method.
+
+# A/B Testing Analysis
+
+-   Step1: To initially evaluate whether the proposed modifications result in an average revenue increase compared to the previously observed revenue, we conduct a comparison of the revenue means between the two data sets.
+
+-   Step2: Conducting A/B Testing using a two-sample t-test on the data gathered from our control and treatment groups.
+
+```{r}
+#combining all of the four data
+dataa1 <- read.csv("dataA1.csv")
+datab1 <- read.csv("dataB1.csv")
+dataa2 <- read.csv("dataA2.csv")
+datab2 <- read.csv("dataB2.csv")
+dataa3 <- read.csv("dataA3.csv")
+datab3 <- read.csv("dataB3.csv")
+dataa4 <- read.csv("dataA4.csv")
+datab4 <- read.csv("dataB4.csv")
+merged_df<-rbind(dataa1,dataa2,dataa3,dataa4)
+merged_df1<-rbind(datab1,datab2,datab3,datab4)
+
+#create KPI (revenue)
+merged_df$revenue<-((merged_df$ad_clicks*0.01)+merged_df$in_game_purchases)
+merged_df1$revenue<-((merged_df1$ad_clicks*0.01)+merged_df1$in_game_purchases)
+#percent change in the means with and without the proposed changes
+((mean(merged_df1$revenue)-mean(merged_df$revenue))/mean(merged_df$revenue))*100
+```
+
+```{r}
+  A <- merged_df$revenue
+  B <- merged_df1$revenue
+  
+  t_test <- t.test(A,B,alternative = "less")
+  t_test
+```
+
+A p-value of 0.003286 which is smaller than 0.05, suggests that we reject the null hypothesis. This implies that the revenue increases with the propose changes.
+
+```{r}
+#to test whether there are any user in the data provided that didn't play the game
+count <- sum(merged_df$n_games == 0)
+count
+count <- sum(merged_df1$n_games == 0)
+count
+```
+
+```{r}
+#filtering data to remove users not playing the game
+merged_df <- filter(merged_df,n_games!=0)
+merged_df1 <- filter(merged_df1,n_games != 0)
+#creating a column for average idle_time per user
+library(tidyverse)
+merged_df$botgames<-merged_df$n_games_bot/merged_df$n_games
+merged_df1$botgames<-merged_df1$n_games_bot/merged_df1$n_games
+#each success is regarded as the player not playing any game with a bot, i.e., the player only plays with other players
+successes_df<-filter(merged_df,botgames==0)
+successes_df1<-filter(merged_df1,botgames==0)
+tot_df<-nrow(merged_df)
+tot_df1<-nrow(merged_df1)
+prop.test(x=c(nrow(successes_df), nrow(successes_df1)),n=c(tot_df,tot_df1),alternative='greater')
+tot_df1
+tot_df
+```
+
+The p-value is 0.6529 which is larger than 0.05. We fail to reject the Null hypothesis, suggesting that the propose change has no negative impact on player experience.
+```{r}
+ggplot(hist_data, aes(play_time, in_game_purchases)) +
+  geom_point(color='white',size=1)+
+  geom_smooth(method = 'lm', se = FALSE, color = '#C71585', linetype = 'dashed', size = 2) +  # Style the regression line
+  labs(
+    title = 'Play Time vs In Game Purchases',
+    x = 'Play Time (s)',
+    y = 'In Game Purchases ($)'
+  ) +
+  theme_minimal() +  # Choose a minimal theme
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16, face = 'bold', margin = margin(b = 20), color='white'),
+    axis.title.x = element_text(size = 14, color='white'),
+    axis.title.y = element_text(size = 14, color='white'),
+    axis.text.x = element_text(size = 12, color='white'),
+    axis.text.y = element_text(size = 12, color='white'),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank(),
+    plot.background = element_rect(fill = 'black')
+  ) +
+  scale_color_manual(values = c('white'))  # Set line color manually
+
+```
